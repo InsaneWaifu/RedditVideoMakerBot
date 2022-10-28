@@ -64,17 +64,7 @@ def run_many(times):
 
 
 def shutdown():
-    print_markdown("## Clearing temp files")
-    try:
-        redditid
-    except NameError:
-        print("Exiting...")
-        exit()
-    else:
-        cleanup(redditid)
-        print("Exiting...")
-        exit()
-
+    pass
 if __name__ == "__main__":
     config = settings.check_toml("utils/.config.template.toml", "config.toml")
     config is False and exit()

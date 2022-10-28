@@ -9,8 +9,7 @@ from requests.adapters import HTTPAdapter, Retry
 # Code by @JasonLovesDoggo
 # https://twitter.com/scanlime/status/1512598559769702406
 
-nonhuman = [  # DISNEY VOICES
-    "en_us_ghostface",  # Ghost Face
+nonhuman = [  # DISNEY VOICES  # Ghost Face
     "en_us_chewbacca",  # Chewbacca
     "en_us_c3po",  # C3PO
     "en_us_stitch",  # Stitch
@@ -19,16 +18,12 @@ nonhuman = [  # DISNEY VOICES
     # ENGLISH VOICES
 ]
 human = [
-    "en_au_001",  # English AU - Female
     "en_au_002",  # English AU - Male
-    "en_uk_001",  # English UK - Male 1
-    "en_uk_003",  # English UK - Male 2
-    "en_us_001",  # English US - Female (Int. 1)
     "en_us_002",  # English US - Female (Int. 2)
     "en_us_006",  # English US - Male 1
-    "en_us_007",  # English US - Male 2
-    "en_us_009",  # English US - Male 3
-    "en_us_010",
+    "en_au_002",  # English AU - Male
+    "en_us_002",  # English US - Female (Int. 2)
+    "en_us_006",  # English US - Male 1
 ]
 voices = nonhuman + human
 
@@ -74,11 +69,6 @@ class TikTok:  # TikTok Text-to-Speech Wrapper
         #     pass
         voice = (
             self.randomvoice()
-            if random_voice
-            else (
-                settings.config["settings"]["tts"]["tiktok_voice"]
-                or random.choice(self.voices["human"])
-            )
         )
         try:
             r = requests.post(f"{self.URI_BASE}{voice}&req_text={text}&speaker_map_type=0")
@@ -91,6 +81,9 @@ class TikTok:  # TikTok Text-to-Speech Wrapper
             session.mount("https://", adapter)
             r = session.post(f"{self.URI_BASE}{voice}&req_text={text}&speaker_map_type=0")
         # print(r.text)
+        with open(filepath + " " + voice +  ".json", "w+") as f:
+            f.write(r.text)
+        print(voice)
         vstr = [r.json()["data"]["v_str"]][0]
         b64d = base64.b64decode(vstr)
 

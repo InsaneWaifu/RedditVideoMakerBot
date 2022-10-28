@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import re
 from typing import Dict
+
+from numpy import False_
 from utils import settings
 from playwright.async_api import async_playwright  # pylint: disable=unused-import
 
@@ -32,7 +34,7 @@ def download_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: in
     with sync_playwright() as p:
         print_substep("Launching Headless Browser...")
 
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(headless=False)
         context = browser.new_context()
 
         if settings.config["settings"]["theme"] == "dark":
@@ -91,26 +93,26 @@ def download_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: in
                 if page.locator('[data-testid="content-gate"]').is_visible():
                     page.locator('[data-testid="content-gate"] button').click()
 
-                page.goto(f'https://reddit.com{comment["comment_url"]}', timeout=0)
-
-                # translate code
-
-                if settings.config["reddit"]["thread"]["post_lang"]:
-                    comment_tl = ts.google(
-                        comment["comment_body"],
-                        to_language=settings.config["reddit"]["thread"]["post_lang"],
-                    )
-                    page.evaluate(
-                        '([tl_content, tl_id]) => document.querySelector(`#t1_${tl_id} > div:nth-child(2) > div > div[data-testid="comment"] > div`).textContent = tl_content',
-                        [comment_tl, comment["comment_id"]],
-                    )
                 try:
+                    print('Found on page! Result!')
                     page.locator(f"#t1_{comment['comment_id']}").screenshot(
                         path=f"assets/temp/{id}/png/comment_{idx}.png"
                     )
-                except TimeoutError:
-                    del reddit_object["comments"]
-                    screenshot_num += 1
-                    print("TimeoutError: Skipping screenshot...")
-                    continue
+                except:
+                    print('Could not find on page, go to seperate page.')
+                    #if comment could not be located
+                    page.goto(f'https://reddit.com{comment["comment_url"]}', timeout=0)
+
+
+
+                    try:
+                        page.locator(f"#t1_{comment['comment_id']}").screenshot(
+                            path=f"assets/temp/{id}/png/comment_{idx}.png"
+                        )
+                    except TimeoutError:
+                        del reddit_object["comments"]
+                        screenshot_num += 1
+                        print("TimeoutError: Skipping screenshot...")
+                        continue
+                    page.goto(reddit_object["thread_url"], timeout=0)
         print_substep("Screenshots downloaded Successfully.", style="bold green")

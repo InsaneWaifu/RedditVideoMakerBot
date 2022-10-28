@@ -38,6 +38,7 @@ class TTSEngine:
         max_length: int = DEFAULT_MAX_LENGTH,
         last_clip_length: int = 0,
     ):
+        self.racked_up_split_length = 0
         self.tts_module = tts_module()
         self.reddit_object = reddit_object
         self.redditid = re.sub(r"[^\w\s-]", "", reddit_object["thread_id"])
@@ -96,9 +97,13 @@ class TTSEngine:
                 offset += 1
                 continue
 
-            self.call_tts(f"{idx}-{idy - offset}.part", new_text)
+            if not self.call_tts(f"{idx}-{idy - offset}.part", new_text, True):
+                # Failed for whatever reason, seems to happen with tiktok and split posts.
+                self.length -= self.racked_up_split_length
+                print("Failed")
+                return
             split_files.append(AudioFileClip(f"{self.path}/{idx}-{idy - offset}.part.mp3"))
-
+        self.racked_up_split_length = 0
         CompositeAudioClip([concatenate_audioclips(split_files)]).write_audiofile(
             f"{self.path}/{idx}.mp3", fps=44100, verbose=False, logger=None
         )
@@ -113,7 +118,7 @@ class TTSEngine:
 
         # Path(f"{self.path}/{idx}-{i}.part.mp3").unlink()
 
-    def call_tts(self, filename: str, text: str):
+    def call_tts(self, filename: str, text: str, split=False):
         self.tts_module.run(text, filepath=f"{self.path}/{filename}.mp3")
         # try:
         #     self.length += MP3(f"{self.path}/{filename}.mp3").info.length
@@ -123,9 +128,12 @@ class TTSEngine:
             clip = AudioFileClip(f"{self.path}/{filename}.mp3")
             self.last_clip_length = clip.duration
             self.length += clip.duration
+            if split:
+                self.racked_up_split_length += clip.duration
             clip.close()
+            return True
         except:
-            self.length = 0
+            return False
 
 
 def process_text(text: str):

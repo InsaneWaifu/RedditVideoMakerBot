@@ -88,6 +88,6 @@ def chop_background_video(background_config: Tuple[str, str, str, Any], video_le
         print_substep("FFMPEG issue. Trying again...")
         with VideoFileClip(f"assets/backgrounds/{choice}") as video:
             new = video.subclip(start_time, end_time)
-            new.write_videofile(f"assets/temp/{id}/background.mp4")
+            new.write_videofile(f"assets/temp/{id}/background.mp4", threads=10)
     print_substep("Background video chopped successfully!", style="bold green")
     return background_config[2]

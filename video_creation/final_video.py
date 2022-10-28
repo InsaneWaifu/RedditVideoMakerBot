@@ -2,6 +2,8 @@
 import multiprocessing
 import os
 import re
+import shutil
+from mutagen.mp3 import MP3
 from os.path import exists
 from typing import Tuple, Any
 from moviepy.audio.AudioClip import concatenate_audioclips, CompositeAudioClip
@@ -18,10 +20,21 @@ from utils.console import print_step, print_substep
 from utils.video import Video
 from utils.videos import save_data
 from utils import settings
-
+import ffmpeg
 console = Console()
 W, H = 1080, 1920
 
+input_args = {
+    "hwaccel": "nvdec"
+}
+
+output_args = {
+    "vcodec": "hevc_nvenc",
+    "c:v": "hevc_nvenc",
+    "preset": "fast",
+    "tier": "high",
+    "b:v": "20M",
+}
 
 def name_normalize(name: str) -> str:
     name = re.sub(r'[?\\"%*:|<>]', "", name)
@@ -64,49 +77,74 @@ def make_final_video(
     #    VOLUME_MULTIPLIER = 1
     id = re.sub(r"[^\w\s-]", "", reddit_obj["thread_id"])
     print_step("Creating the final video 🎥")
-    VideoFileClip.reW = lambda clip: clip.resize(width=W)
-    VideoFileClip.reH = lambda clip: clip.resize(width=H)
     opacity = settings.config["settings"]["opacity"]
     transition = settings.config["settings"]["transition"]
-    background_clip = (
+    """background_clip = (
         VideoFileClip(f"assets/temp/{id}/background.mp4")
         .without_audio()
         .resize(height=H)
         .crop(x1=1166.6, y1=0, x2=2246.6, y2=1920)
-    )
+    )"""
+    bgs = ffmpeg.input(f"assets/temp/{id}/background.mp4", an=None, **input_args)
+    bgs = ffmpeg.filter(bgs, "scale", -2, 1920)
+    bgs = ffmpeg.crop(bgs, 420, 0, 1080, 1920)
+    out = ffmpeg.output(bgs, f"assets/temp/{id}/backgrounds.mp4", **output_args)
+    out.run()
 
     # Gather all audio clips
-    audio_clips = [AudioFileClip(f"assets/temp/{id}/mp3/{i}.mp3") for i in range(number_of_clips)]
-    audio_clips.insert(0, AudioFileClip(f"assets/temp/{id}/mp3/title.mp3"))
-    audio_concat = concatenate_audioclips(audio_clips)
-    audio_composite = CompositeAudioClip([audio_concat])
+    audio_clips = [f"assets/temp/{id}/mp3/{i}.mp3" for i in range(number_of_clips)]
+    audio_clips.insert(0, f"assets/temp/{id}/mp3/title.mp3")
 
     console.log(f"[bold green] Video Will Be: {length} Seconds Long")
     # add title to video
     image_clips = []
     # Gather all images
-    new_opacity = 1 if opacity is None or float(opacity) >= 1 else float(opacity)
-    new_transition = 0 if transition is None or float(transition) > 2 else float(transition)
     image_clips.insert(
         0,
-        ImageClip(f"assets/temp/{id}/png/title.png")
-        .set_duration(audio_clips[0].duration)
-        .resize(width=W - 100)
-        .set_opacity(new_opacity)
-        .crossfadein(new_transition)
-        .crossfadeout(new_transition),
+        f"assets/temp/{id}/png/title.png"
     )
 
     for i in range(0, number_of_clips):
         image_clips.append(
-            ImageClip(f"assets/temp/{id}/png/comment_{i}.png")
-            .set_duration(audio_clips[i + 1].duration)
-            .resize(width=W - 100)
-            .set_opacity(new_opacity)
-            .crossfadein(new_transition)
-            .crossfadeout(new_transition)
+            f"assets/temp/{id}/png/comment_{i}.png"
         )
+    
+    lengths = []
+    for i in audio_clips:
+        m3 = MP3(i)
+        lengths.append(m3.info.length)
+        
 
+
+    with open("output.log", "w+") as f:
+        f.write("\n\n\n".join([str(image_clips), str(audio_clips), str(out), str(background_config), str(lengths)]))
+
+    # Try to create a video with the screenshots
+    bgv = ffmpeg.input(f"assets/temp/{id}/backgrounds.mp4", **input_args)
+    now = 0
+    ttss = []
+    for i in range(len(image_clips)):
+        ii = i
+        nextnow = lengths[ii] + now
+        ima = image_clips[ii]
+        aud = audio_clips[ii]
+        tts = ffmpeg.input(aud, **input_args)
+        ttss.append(tts)
+        comm = ffmpeg.input(ima, **input_args)
+        comm = ffmpeg.filter(comm, "scale", 960, -2)
+        bgv = ffmpeg.filter([bgv, comm], "overlay", "(W-w)/2", "(H-h)/2", enable=f"between(t,{str(now)},{str(nextnow)})")
+        print(ima, now, nextnow, ii)
+        now = nextnow
+    audio = ffmpeg.concat(*ttss, v=0, a=1)
+    ot = ffmpeg.output(bgv, audio, f"assets/temp/{id}/almost.mp4", **output_args).global_args("-threads", "12", "-y")
+    print(ot.get_args())
+    
+    ot.run()
+    try:
+        os.rename(f"assets/temp/{id}/almost.mp4", f"results/{id}.mp4")
+    except Exception as e:
+        console.log(e)
+    shutil.rmtree("assets/temp/")
     # if os.path.exists("assets/mp3/posttext.mp3"):
     #    image_clips.insert(
     #        0,
@@ -117,17 +155,15 @@ def make_final_video(
     #        .set_opacity(float(opacity)),
     #    )
     # else: story mode stuff
+    """
     img_clip_pos = background_config[3]
     image_concat = concatenate_videoclips(image_clips).set_position(
         img_clip_pos
     )  # note transition kwarg for delay in imgs
     image_concat.audio = audio_composite
-    final = CompositeVideoClip([background_clip, image_concat])
-    title = re.sub(r"[^\w\s-]", "", reddit_obj["thread_title"])
-    idx = re.sub(r"[^\w\s-]", "", reddit_obj["thread_id"])
+    final = CompositeVideoClip([background_clip, image_concat], use_bgclip=True)
 
-    filename = f"{name_normalize(title)[:251]}.mp4"
-    subreddit = settings.config["reddit"]["thread"]["subreddit"]
+
 
     if not exists(f"./results/{subreddit}"):
         print_substep("The results folder didn't exist so I made it")
@@ -140,24 +176,28 @@ def make_final_video(
     #    # lowered_audio = audio_background.multiply_volume( # todo get this to work
     #    #    VOLUME_MULTIPLIER)  # lower volume by background_audio_volume, use with fx
     #    final.set_audio(final_audio)
-    final = Video(final).add_watermark(
-        text=f"Background credit: {background_config[2]}", opacity=0.4, redditid=reddit_obj
-     )
+
     final.write_videofile(
         f"assets/temp/{id}/temp.mp4",
-        fps=30,
+        fps=24,
         audio_codec="aac",
         audio_bitrate="192k",
         verbose=False,
-        threads=multiprocessing.cpu_count(),
+        threads=10
     )
     ffmpeg_extract_subclip(
         f"assets/temp/{id}/temp.mp4",
         0,
         length,
         targetname=f"results/{subreddit}/{filename}",
-    )
+    )"""
+    subreddit = settings.config["reddit"]["thread"]["subreddit"]
+    title = re.sub(r"[^\w\s-]", "", reddit_obj["thread_title"])
+    filename = f"{name_normalize(title)[:251]}.mp4"
+    idx = re.sub(r"[^\w\s-]", "", reddit_obj["thread_id"])
     save_data(subreddit, filename, title, idx, background_config[2])
+    
+    """
     print_step("Removing temporary files 🗑")
     cleanups = cleanup(id)
     print_substep(f"Removed {cleanups} temporary files 🗑")
@@ -166,3 +206,4 @@ def make_final_video(
     print_step(
         f'Reddit title: {reddit_obj["thread_title"]} \n Background Credit: {background_config[2]}'
     )
+"""
