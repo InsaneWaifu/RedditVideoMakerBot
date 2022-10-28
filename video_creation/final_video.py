@@ -25,11 +25,11 @@ console = Console()
 W, H = 1080, 1920
 
 input_args = {
-    "hwaccel": "nvdec"
+    "hwaccel": "cuda",
+    # todo hwaccel codec
 }
 
 output_args = {
-    "vcodec": "hevc_nvenc",
     "c:v": "hevc_nvenc",
     "preset": "fast",
     "tier": "high",
@@ -85,11 +85,10 @@ def make_final_video(
         .resize(height=H)
         .crop(x1=1166.6, y1=0, x2=2246.6, y2=1920)
     )"""
-    bgs = ffmpeg.input(f"assets/temp/{id}/background.mp4", an=None, **input_args)
-    bgs = ffmpeg.filter(bgs, "scale", -2, 1920)
-    bgs = ffmpeg.crop(bgs, 420, 0, 1080, 1920)
-    out = ffmpeg.output(bgs, f"assets/temp/{id}/backgrounds.mp4", **output_args)
-    out.run()
+    bgv = ffmpeg.input(f"assets/temp/{id}/background.mp4", an=None, **input_args)
+    bgv = ffmpeg.filter(bgv, "scale", -2, 1920)
+    bgv = ffmpeg.crop(bgv, 1200, 0, 1080, 1920)
+
 
     # Gather all audio clips
     audio_clips = [f"assets/temp/{id}/mp3/{i}.mp3" for i in range(number_of_clips)]
@@ -116,11 +115,6 @@ def make_final_video(
         
 
 
-    with open("output.log", "w+") as f:
-        f.write("\n\n\n".join([str(image_clips), str(audio_clips), str(out), str(background_config), str(lengths)]))
-
-    # Try to create a video with the screenshots
-    bgv = ffmpeg.input(f"assets/temp/{id}/backgrounds.mp4", **input_args)
     now = 0
     ttss = []
     for i in range(len(image_clips)):
@@ -136,10 +130,10 @@ def make_final_video(
         print(ima, now, nextnow, ii)
         now = nextnow
     audio = ffmpeg.concat(*ttss, v=0, a=1)
-    ot = ffmpeg.output(bgv, audio, f"assets/temp/{id}/almost.mp4", **output_args).global_args("-threads", "12", "-y")
+    ot = ffmpeg.output(bgv, audio,  f"assets/temp/{id}/almost.mp4", **output_args).global_args("-threads", "12", "-y")
     print(ot.get_args())
     
-    ot.run()
+    ot.run(cmd="ffpb")
     try:
         os.rename(f"assets/temp/{id}/almost.mp4", f"results/{id}.mp4")
     except Exception as e:
